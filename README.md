@@ -6,4 +6,4 @@ videos). It is intended to quickly show which formats your browser/device
 supports, and give browser vendors a quick way to sanity-check their
 implementations.
 
-[View Online](http://toji.github.io/texture-tester/)
+[View Online](https://coleryu.github.io/texture-tester/index.html)
