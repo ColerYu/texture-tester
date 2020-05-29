@@ -70,12 +70,20 @@ var WebGLUtil = (function() {
       var context;
       if (canvas.getContext) {
         try {
-          context = canvas.getContext('webgl', options);
+          context = canvas.getContext('webgl2', options);
+          var pList = ['VERSION', 'RENDERER', 'VIEWPORT', 'MAX_RENDERBUFFER_SIZE','MAX_VIEWPORT_DIMS', 'MAX_TEXTURE_SIZE','MAX_CUBE_MAP_TEXTURE_SIZE', 'SAMPLES', 'MAX_TEXTURE_IMAGE_UNITS', 'MAX_VERTEX_TEXTURE_IMAGE_UNITS'];
+          var gl = context; var str = ''; pList.map((p) => { str += ( '\n' + p + '=' + gl.getParameter(gl[p]))});
+        
+          console.error('context' , context, str);
           if(context) { return context; }
         } catch(ex) {}
       
         try {
           context = canvas.getContext('experimental-webgl', options);
+          var pList = ['VERSION', 'RENDERER', 'VIEWPORT', 'MAX_RENDERBUFFER_SIZE','MAX_VIEWPORT_DIMS', 'MAX_TEXTURE_SIZE','MAX_CUBE_MAP_TEXTURE_SIZE', 'SAMPLES', 'MAX_TEXTURE_IMAGE_UNITS', 'MAX_VERTEX_TEXTURE_IMAGE_UNITS'];
+          var gl = context; var str = ''; pList.map((p) => { str += ( '\n' + p + '=' + gl.getParameter(gl[p]))});
+        
+          console.error('context' , context, str);
           if(context) { return context; }
         } catch(ex) {}
       }

@@ -658,18 +658,17 @@ var WebGLTextureUtil = (function() {
       }
     }
 
-    return function(gl, src, texture, callback) {
-      var til;
-
+    return function(gl, src, texture, callback, onFileLoadedCallback) {
+      var til; 
       if(cacheTop) {
         til = textureImageCache[--cacheTop];
-        til.loadTexture(gl, src, texture, callback);
+        til.loadTexture(gl, src, texture, callback, onFileLoadedCallback);
       } else if (remainingCacheImages) {
         til = new TextureImageLoader(releaseTextureImageLoader);
-        til.loadTexture(gl, src, texture, callback);
+        til.loadTexture(gl, src, texture, callback, onFileLoadedCallback);
         --remainingCacheImages;
       } else {
-        pendingTextureRequests.push(new PendingTextureRequest(gl, src, texture, callback));
+        pendingTextureRequests.push(new PendingTextureRequest(gl, src, texture, callback, onFileLoadedCallback));
       }
 
       return texture;
@@ -713,7 +712,11 @@ var WebGLTextureUtil = (function() {
       var xhr = new XMLHttpRequest();
       xhr.addEventListener('load', function (ev) {
         if (xhr.status == 200) {
-          // If the file loaded successfully parse and decompress it.
+          // If the file loaded successfully parse and decompress it. 
+          postMessage({
+            id: id,
+            xhrByteLength: xhr.response.byteLength
+          });
           decompressCRN(xhr.response, uploadCallback, errorCallback);
         } else {
           errorCallback(xhr.statusText);
@@ -730,12 +733,12 @@ var WebGLTextureUtil = (function() {
     //=====================//
 
     var nextPendingTextureId = 0;
-    var CrunchPendingTexture = function(texture, callback) {
+    var CrunchPendingTexture = function(texture, callback, onFileLoadedCallback) {
       this.id = nextPendingTextureId++;
       this.texture = texture;
       this.callback = callback;
+      this.onFileLoadedCallback = onFileLoadedCallback;
     }
-
     var useWorker = true;
 
     // This class is our public interface.
@@ -768,6 +771,13 @@ var WebGLTextureUtil = (function() {
           var pt = self.pendingTextures[id];
           if (!pt) { return; }
 
+          if (msg.data.xhrByteLength) {
+            var onFileLoadedCallback = pt.onFileLoadedCallback;
+            if (pt.onFileLoadedCallback) {
+              onFileLoadedCallback(0, msg.data.xhrByteLength);
+            }
+            return;
+          }
           // Remove the pending texture from the waiting list.
           delete self.pendingTextures[id];
 
@@ -887,19 +897,17 @@ var WebGLTextureUtil = (function() {
     // Loads a image file into the given texture.
     // Supports any format that can be loaded into an img tag
     // If no texture is provided one is created and returned.
-    TextureLoader.prototype.loadIMG = function(src, texture, callback) {
+    TextureLoader.prototype.loadIMG = function(src, texture, callback, onFileLoadedCallback) {
       if(!texture) {
         texture = this.gl.createTexture();
       }
-
-      loadImgTexture(gl, src, texture, callback);
-
+      loadImgTexture(gl, src, texture, callback, onFileLoadedCallback); 
       return texture;
     }
 
     // Loads a DDS file into the given texture.
     // If no texture is provided one is created and returned.
-    TextureLoader.prototype.loadDDS = function(src, texture, callback) {
+    TextureLoader.prototype.loadDDS = function(src, texture, callback, onFileLoadedCallback) {
       var self = this;
       if (!texture) {
         texture = this.gl.createTexture();
@@ -910,6 +918,9 @@ var WebGLTextureUtil = (function() {
       xhr.addEventListener('load', function (ev) {
         if (xhr.status == 200) {
           // If the file loaded successfully parse it.
+          if (onFileLoadedCallback) {
+            onFileLoadedCallback(xhr);
+          }
           parseDDS(xhr.response, function(dxtData, width, height, levels, internalFormat) {
             if (!self._formatSupported(internalFormat)) {
               clearOnError(self.gl, "Texture format not supported", texture, callback);
@@ -933,7 +944,7 @@ var WebGLTextureUtil = (function() {
 
     // Loads a CRN (Crunch) file into the given texture.
     // If no texture is provided one is created and returned.
-    TextureLoader.prototype.loadCRN = function(src, texture, callback) {
+    TextureLoader.prototype.loadCRN = function(src, texture, callback, onFileLoadedCallback) {
       var self = this;
       if (!texture) {
         texture = this.gl.createTexture();
@@ -947,7 +958,7 @@ var WebGLTextureUtil = (function() {
       if(this.worker) {
         // If we're using a worker to handle the decoding create a pending texture
         // and put it on the waiting list.
-        var pending = new CrunchPendingTexture(texture, callback);
+        var pending = new CrunchPendingTexture(texture, callback, onFileLoadedCallback);
         this.pendingTextures[pending.id] = pending;
         // Then tell the worker to load the CRN file.
         this.worker.postMessage({id: pending.id, src: src});
@@ -956,6 +967,9 @@ var WebGLTextureUtil = (function() {
         var xhr = new XMLHttpRequest();
         xhr.addEventListener('load', function (ev) {
           if (xhr.status == 200) {
+            if (onFileLoadedCallback) {
+              onFileLoadedCallback(xhr);
+            }
             // If the file loaded successfully parse and decompress it.
             decompressCRN(xhr.response, function(dxtData, width, height, levels, internalFormat) {
               if (!self._formatSupported(internalFormat)) {
@@ -978,10 +992,27 @@ var WebGLTextureUtil = (function() {
 
       return texture;
     }
-
+    TextureLoader.prototype.loadFile = function(src, texture, callback, onFileLoadedCallback) {
+      var self = this; 
+      // Load the file via XHR.
+      var xhr = new XMLHttpRequest();
+      xhr.addEventListener('load', function (ev) {
+        if (xhr.status == 200) {
+          // If the file loaded successfully parse it. 
+          if (onFileLoadedCallback) {
+            onFileLoadedCallback(xhr);
+          }
+           
+        } 
+      }, false);
+      xhr.open('GET', src, true);
+      xhr.responseType = 'arraybuffer'; 
+      xhr.send(null); 
+      return texture;
+    }
     // Loads a PVR file into the given texture.
     // If no texture is provided one is created and returned.
-    TextureLoader.prototype.loadPVR = function(src, texture, callback) {
+    TextureLoader.prototype.loadPVR = function(src, texture, callback, onFileLoadedCallback) {
       var self = this;
       if(!texture) {
         texture = this.gl.createTexture();
@@ -992,6 +1023,11 @@ var WebGLTextureUtil = (function() {
       xhr.addEventListener('load', function (ev) {
         if (xhr.status == 200) {
           // If the file loaded successfully parse it.
+
+
+          if (onFileLoadedCallback) {
+            onFileLoadedCallback(xhr);
+          }
           parsePVR(xhr.response, function(dxtData, width, height, levels, internalFormat) {
             if (!self._formatSupported(internalFormat)) {
               clearOnError(self.gl, "Texture format not supported", texture, callback);
@@ -1007,7 +1043,7 @@ var WebGLTextureUtil = (function() {
         }
       }, false);
       xhr.open('GET', src, true);
-      xhr.responseType = 'arraybuffer';
+      xhr.responseType = 'arraybuffer'; 
       xhr.send(null);
 
       return texture;
@@ -1015,7 +1051,7 @@ var WebGLTextureUtil = (function() {
 
     // Loads a texture from a file. Guesses the type based on extension.
     // If no texture is provided one is created and returned.
-    TextureLoader.prototype.loadTexture = function(src, texture, callback) {
+    TextureLoader.prototype.loadTexture = function(src, texture, callback, onFileLoadedCallback) {
       // Shamelessly lifted from StackOverflow :)
       // http://stackoverflow.com/questions/680929
       var re = /(?:\.([^.]+))?$/;
@@ -1024,13 +1060,19 @@ var WebGLTextureUtil = (function() {
 
       switch(ext) {
         case 'crn':
-          return this.loadCRN(src, texture, callback);
+          return this.loadCRN(src, texture, callback, onFileLoadedCallback);
         case 'dds':
-          return this.loadDDS(src, texture, callback);
+          return this.loadDDS(src, texture, callback, onFileLoadedCallback);
         case 'pvr':
-          return this.loadPVR(src, texture, callback);
+          return this.loadPVR(src, texture, callback, onFileLoadedCallback);
         default:
-          return this.loadIMG(src, texture, callback);
+          var self = this;
+          this.loadFile(src, texture, callback, function(v1, v2) { 
+            if (onFileLoadedCallback) {
+              onFileLoadedCallback(v1, v2);
+            } 
+            return self.loadIMG(src, texture, callback, onFileLoadedCallback);
+          });
       }
     }
 
